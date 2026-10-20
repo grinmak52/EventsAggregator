@@ -1,5 +1,6 @@
-from pydantic import BaseModel, PostgresDsn
+from pydantic import BaseModel, Field, PostgresDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 
 class RunConfig(BaseModel):
@@ -17,7 +18,7 @@ class ApiPrefix(BaseModel):
 
 
 class DatabaseConfig(BaseModel):
-    url: PostgresDsn
+    url: PostgresDsn | None = None
     echo: bool = False
     echo_pool: bool = False
     max_overflow: int = 10
@@ -32,6 +33,33 @@ class DatabaseConfig(BaseModel):
     }
 
 
+class PostgresEnv(BaseSettings):
+    """Переменные PostgreSQL, которые задаёт LMS при деплое."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="POSTGRES_",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    host: str
+    port: int = 5432
+    username: str
+    password: str
+    database_name: str
+
+    def build_url(self) -> PostgresDsn:
+        url = URL.create(
+            drivername="postgresql+asyncpg",
+            username=self.username,
+            password=self.password,
+            host=self.host,
+            port=self.port,
+            database=self.database_name,
+        )
+        return PostgresDsn(url.render_as_string(hide_password=False))
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=(
@@ -44,7 +72,13 @@ class Settings(BaseSettings):
     )
     run: RunConfig = RunConfig()
     api: ApiPrefix = ApiPrefix()
-    db: DatabaseConfig
+    db: DatabaseConfig = Field(default_factory=DatabaseConfig)
+
+    @model_validator(mode="after")
+    def fill_db_url(self) -> Settings:
+        if self.db.url is None:
+            self.db.url = PostgresEnv().build_url()
+        return self
 
 
 settings = Settings()

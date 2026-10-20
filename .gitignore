@@ -118,5 +118,6 @@ dmypy.json
 .vscode
 
 #Pycharm IDE
+.ruff_cache/
 .idea/
 media/
